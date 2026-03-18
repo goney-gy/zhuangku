@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关键词匹配工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0078D7',
+                        secondary: '#e8f4f8',
+                        success: '#28a745',
+                        warning: '#ffc107',
+                        danger: '#dc3545',
+                        info: '#17a2b8',
+                    },
+                    fontFamily: {
+                        sans: ['Microsoft YaHei', 'Arial', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .scrollbar-thin {
+                scrollbar-width: thin;
+            }
+            .scrollbar-thin::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+            }
+            .scrollbar-thin::-webkit-scrollbar-thumb {
+                background-color: #cbd5e0;
+                border-radius: 3px;
+            }
+            .form-label {
+                @apply text-gray-700 font-medium mb-2 block;
+            }
+            .form-control {
+                @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary;
+            }
+            .btn {
+                @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+            }
+            .btn-primary {
+                @apply bg-primary text-white hover:bg-primary/90;
+            }
+            .btn-secondary {
+                @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+            }
+            .btn-danger {
+                @apply bg-danger text-white hover:bg-danger/90;
+            }
+            .card {
+                @apply bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4;
+            }
+            .progress-bar {
+                @apply h-2 bg-gray-200 rounded-full overflow-hidden;
+            }
+            .progress-value {
+                @apply h-full bg-primary transition-all duration-300;
+            }
+            .treeview th {
+                @apply bg-primary text-white px-4 py-2 text-left sticky top-0;
+            }
+            .treeview td {
+                @apply px-4 py-2 border-b border-gray-200;
+            }
+            .treeview tr:nth-child(even) {
+                @apply bg-gray-50;
+            }
+            .treeview tr:hover {
+                @apply bg-secondary;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-6"> 关键词匹配工具</h1>
+        
+        <!-- 数据库配置（优化：自动加载数据表列表） -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-database mr-2"></i>数据库配置
+            </h2>
+            <div class="mb-4">
+                <label class="form-label">数据库存储位置</label>
+                <div class="form-control bg-gray-50 cursor-default">goney-gy's bengbeng</div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">数据表名称</label>
+                <select id="tableName" class="form-control">
+                    <!-- 数据表列表会自动从TABLE_LIST常量加载 -->
+                </select>
+            </div>
+            <div class="flex justify-end">
+                <button id="testConnBtn" class="btn btn-primary">
+                    <i class="fa fa-check mr-2"></i>测试连接
+                </button>
+            </div>
+            <div id="connStatus" class="mt-3 text-sm text-gray-600"></div>
+        </div>
+
+        <!-- 关键词配置 -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-key mr-2"></i>关键词配置
+            </h2>
+            <div class="mb-4">
+                <label class="form-label">Excel文件导入</label>
+                <div class="flex items-center gap-2">
+                    <input type="file" id="keywordFile" accept=".xlsx,.xls" class="form-control">
+                    <button id="loadKeywordFileBtn" class="btn btn-secondary">
+                        <i class="fa fa-upload mr-2"></i>加载
+                    </button>
+                    <span id="keywordFileName" class="text-sm text-gray-500">未选择文件</span>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">手动输入关键词（支持逗号、分号、顿号分隔）</label>
+                <textarea id="keywordText" class="form-control scrollbar-thin" rows="3" placeholder="例如：医疗数据，中文语料；文本数据、英文语料"></textarea>
+            </div>
+            <div id="keywordInfo" class="text-sm text-blue-600">等待加载...</div>
+        </div>
+
+        <!-- 匹配字段配置 -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-list-ul mr-2"></i>匹配字段配置
+            </h2>
+            <div class="mb-4">
+                <label class="form-label">Excel文件导入</label>
+                <div class="flex items-center gap-2">
+                    <input type="file" id="fieldFile" accept=".xlsx,.xls" class="form-control">
+                    <button id="loadFieldFileBtn" class="btn btn-secondary">
+                        <i class="fa fa-upload mr-2"></i>加载
+                    </button>
+                    <span id="fieldFileName" class="text-sm text-gray-500">未选择文件</span>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">手动输入匹配字段（支持逗号、分号、顿号分隔）</label>
+                <textarea id="fieldText" class="form-control scrollbar-thin" rows="3" placeholder="例如：_数据集名称，_数据集介绍；行业、备注"></textarea>
+            </div>
+            <div id="fieldInfo" class="text-sm text-blue-600">等待加载...</div>
+        </div>
+
+        <!-- 输出字段配置 -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-columns mr-2"></i>输出字段配置
+            </h2>
+            <div class="flex items-center gap-2 mb-4">
+                <button id="selectOutputFieldsBtn" class="btn btn-primary">
+                    <i class="fa fa-check-square-o mr-2"></i>选择输出字段
+                </button>
+                <span id="outputFieldStatus" class="text-sm text-gray-600">未选择（默认输出所有字段）</span>
+            </div>
+        </div>
+
+        <!-- 匹配配置 -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-cog mr-2"></i>匹配配置
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="form-label">匹配类型</label>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="matchType" value="FUZZY" checked class="mr-2">
+                            <span>模糊匹配</span>
+                        </label>
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="matchType" value="EXACT" class="mr-2">
+                            <span>精确匹配</span>
+                        </label>
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="matchType" value="PREFIX" class="mr-2">
+                            <span>前缀匹配</span>
+                        </label>
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="matchType" value="SUFFIX" class="mr-2">
+                            <span>后缀匹配</span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">处理批量大小</label>
+                    <input type="number" id="batchSize" class="form-control w-32" value="100" min="1">
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">匹配进度</label>
+                <div class="progress-bar">
+                    <div id="progressBar" class="progress-value" style="width: 0%"></div>
+                </div>
+                <div id="matchStatus" class="text-sm text-gray-600 mt-2">准备就绪</div>
+            </div>
+
+            <div class="flex gap-4">
+                <button id="preloadBtn" class="btn btn-primary">
+                    <i class="fa fa-download mr-2"></i>预加载（必点）
+                </button>
+                <button id="startMatchBtn" class="btn btn-primary">
+                    <i class="fa fa-play mr-2"></i>开始匹配
+                </button>
+                <button id="pauseMatchBtn" class="btn btn-secondary">
+                    <i class="fa fa-pause mr-2"></i>暂停
+                </button>
+            </div>
+        </div>
+
+        <!-- 结果展示 -->
+        <div class="card">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">
+                <i class="fa fa-table mr-2"></i>匹配结果
+            </h2>
+            <div class="mb-4 flex justify-end">
+                <button id="exportExcelBtn" class="btn btn-secondary">
+                    <i class="fa fa-file-excel-o mr-2"></i>导出Excel
+                </button>
+            </div>
+            <div class="overflow-x-auto scrollbar-thin">
+                <table id="resultTable" class="treeview w-full">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="resultEmpty" class="text-center py-8 text-gray-500">
+                暂无匹配结果
+            </div>
+        </div>
+    </div>
+
+    <!-- 输出字段选择弹窗 -->
+    <div id="fieldModal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg w-11/12 max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-semibold text-lg">选择输出字段</h3>
+                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-800">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-4 flex-grow overflow-y-auto scrollbar-thin">
+                <div id="fieldList" class="space-y-2">
+                    <!-- 字段列表将动态生成 -->
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end gap-2">
+                <button id="selectAllFieldsBtn" class="btn btn-secondary">全选</button>
+                <button id="deselectAllFieldsBtn" class="btn btn-secondary">取消全选</button>
+                <button id="confirmFieldsBtn" class="btn btn-primary">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ====================== 核心配置区（添加新表只改这里）======================
+        // 数据表列表：新增表时，只需要在这个数组里加一行 {"value": "表名", "label": "显示名称"} 即可
+        const TABLE_LIST = [
+            {"value": "成品表链接表总表_2026_3_18", "label": "成品表链接表总表_2026_3_18"},
+            // 示例：添加新表（只需要复制下面这行，修改表名即可）
+            // {"value": "新表名称", "label": "新表显示名称"},
+        ];
+
+        // Supabase固定配置（无需修改）
+        const SUPABASE_CONFIG = {
+            url: "https://frngudnfcqdcrqehqxaa.supabase.co",
+            key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybmd1ZG5mY3FkY3JxZWhxeGFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MjU5MDAsImV4cCI6MjA4OTMwMTkwMH0.JIKuUPIxB2_hRCub2JkAz6nwXwCv2tHK78ggxxMYqtk",
+            pageSize: 1000
+        };
+        // ==========================================================================
+
+        // 全局变量
+        let supabase = null;
+        let keywords = [];
+        let matchFields = [];
+        let outputFields = [];
+        let allTableFields = [];
+        let matchResults = [];
+        let isMatching = false;
+        let currentBatch = 0;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化数据表下拉框（自动加载TABLE_LIST）
+            initTableSelect();
+            
+            // 绑定事件（无需修改）
+            document.getElementById('testConnBtn').addEventListener('click', testSupabaseConnection);
+            document.getElementById('loadKeywordFileBtn').addEventListener('click', () => loadFile('keyword'));
+            document.getElementById('keywordFile').addEventListener('change', function() {
+                document.getElementById('keywordFileName').textContent = this.files[0]?.name || '未选择文件';
+            });
+            document.getElementById('loadFieldFileBtn').addEventListener('click', () => loadFile('field'));
+            document.getElementById('fieldFile').addEventListener('change', function() {
+                document.getElementById('fieldFileName').textContent = this.files[0]?.name || '未选择文件';
+            });
+            document.getElementById('preloadBtn').addEventListener('click', preloadData);
+            document.getElementById('startMatchBtn').addEventListener('click', startMatch);
+            document.getElementById('pauseMatchBtn').addEventListener('click', pauseMatch);
+            document.getElementById('selectOutputFieldsBtn').addEventListener('click', openFieldModal);
+            document.getElementById('closeModalBtn').addEventListener('click', closeFieldModal);
+            document.getElementById('selectAllFieldsBtn').addEventListener('click', selectAllFields);
+            document.getElementById('deselectAllFieldsBtn').addEventListener('click', deselectAllFields);
+            document.getElementById('confirmFieldsBtn').addEventListener('click', confirmOutputFields);
+            document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
+            document.getElementById('resultEmpty').style.display = 'none';
+        });
+
+        // 初始化数据表下拉框（自动加载TABLE_LIST）
+        function initTableSelect() {
+            const tableSelect = document.getElementById('tableName');
+            tableSelect.innerHTML = '';
+            
+            // 遍历TABLE_LIST生成下拉选项
+            TABLE_LIST.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table.value;
+                option.textContent = table.label;
+                // 默认选中第一个表
+                if (tableSelect.options.length === 0) {
+                    option.selected = true;
+                }
+                tableSelect.appendChild(option);
+            });
+        }
+
+        // 初始化Supabase连接（无需修改）
+        function initSupabase() {
+            const { url, key } = SUPABASE_CONFIG;
+
+            return {
+                url,
+                key,
+                async queryAllData(table) {
+                    const allData = [];
+                    let page = 0;
+                    const pageSize = SUPABASE_CONFIG.pageSize;
+                    
+                    while (true) {
+                        if (!isMatching) break;
+                        
+                        const offset = page * pageSize;
+                        const filter = `limit=${pageSize}&offset=${offset}`;
+                        
+                        try {
+                            const response = await axios({
+                                url: `${url}/rest/v1/${table}?${filter}`,
+                                method: 'GET',
+                                headers: {
+                                    'apikey': key,
+                                    'Authorization': `Bearer ${key}`,
+                                    'Content-Type': 'application/json',
+                                    'Prefer': 'return=representation'
+                                }
+                            });
+                            
+                            const pageData = response.data;
+                            if (pageData.length === 0) break;
+                            
+                            allData.push(...pageData);
+                            page++;
+                            
+                            document.getElementById('matchStatus').textContent = 
+                                `加载数据中... 已加载 ${allData.length} 条`;
+                            
+                        } catch (error) {
+                            console.error('分页查询错误:', error);
+                            throw error;
+                        }
+                    }
+                    
+                    return allData;
+                },
+                async getTableColumns(table) {
+                    try {
+                        const response = await axios({
+                            url: `${url}/rest/v1/${table}?select=*&limit=1`,
+                            method: 'GET',
+                            headers: {
+                                'apikey': key,
+                                'Authorization': `Bearer ${key}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        return response.data.length > 0 ? Object.keys(response.data[0]) : [];
+                    } catch (error) {
+                        console.error('获取表字段错误:', error);
+                        throw error;
+                    }
+                }
+            };
+        }
+
+        // 测试Supabase连接（无需修改）
+        async function testSupabaseConnection() {
+            const statusEl = document.getElementById('connStatus');
+            statusEl.textContent = '正在测试连接...';
+            
+            try {
+                supabase = initSupabase();
+                if (!supabase) return;
+
+                const tableName = document.getElementById('tableName').value.trim();
+                allTableFields = await supabase.getTableColumns(tableName);
+                
+                if (allTableFields.length > 0) {
+                    showMessage('connStatus', `连接成功！表 ${tableName} 包含 ${allTableFields.length} 个字段`, 'success');
+                } else {
+                    showMessage('connStatus', '连接成功但表无字段', 'warning');
+                }
+            } catch (error) {
+                showMessage('connStatus', `连接失败: ${error.message}`, 'error');
+                supabase = null;
+            }
+        }
+
+        // 加载Excel文件（无需修改）
+        function loadFile(type) {
+            const fileInput = type === 'keyword' ? document.getElementById('keywordFile') : document.getElementById('fieldFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('请先选择文件');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    const items = json
+                        .map(row => row[0] ? String(row[0]).trim() : '')
+                        .filter(item => item);
+                    
+                    const textArea = type === 'keyword' ? document.getElementById('keywordText') : document.getElementById('fieldText');
+                    const currentText = textArea.value.trim();
+                    const newText = currentText ? `${currentText},${items.join(',')}` : items.join(',');
+                    textArea.value = newText;
+                    
+                    const infoEl = type === 'keyword' ? document.getElementById('keywordInfo') : document.getElementById('fieldInfo');
+                    infoEl.textContent = `已从文件加载 ${items.length} 个${type === 'keyword' ? '关键词' : '匹配字段'}`;
+                    
+                    alert(`成功加载 ${items.length} 个${type === 'keyword' ? '关键词' : '匹配字段'}`);
+                } catch (error) {
+                    alert(`读取文件失败: ${error.message}`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 解析输入文本（无需修改）
+        function parseInput(text) {
+            if (!text.trim()) return [];
+            
+            const separators = ['，', '；', ';', '、', '\n', '\r'];
+            separators.forEach(sep => {
+                text = text.replace(new RegExp(sep, 'g'), ',');
+            });
+            
+            return [...new Set(
+                text.split(',')
+                    .map(item => item.trim())
+                    .filter(item => item)
+            )];
+        }
+
+        // 预加载数据（无需修改）
+        function preloadData() {
+            if (!supabase) {
+                alert('请先测试并确保数据库连接成功');
+                return;
+            }
+
+            const keywordText = document.getElementById('keywordText').value;
+            keywords = parseInput(keywordText);
+            
+            const fieldText = document.getElementById('fieldText').value;
+            matchFields = parseInput(fieldText);
+            
+            if (keywords.length === 0) {
+                alert('未找到有效关键词');
+                return;
+            }
+            
+            if (matchFields.length === 0) {
+                alert('未找到有效匹配字段');
+                return;
+            }
+
+            document.getElementById('keywordInfo').textContent = `关键词已加载: ${keywords.length} 个（已去重）`;
+            document.getElementById('fieldInfo').textContent = `匹配字段已加载: ${matchFields.length} 个（已去重）`;
+            
+            const invalidFields = matchFields.filter(field => !allTableFields.includes(field));
+            if (invalidFields.length > 0) {
+                alert(`以下匹配字段在表中不存在：\n${invalidFields.join('\n')}`);
+            }
+
+            alert(`预加载完成！
+关键词: ${keywords.length} 个
+匹配字段: ${matchFields.length} 个
+无效字段: ${invalidFields.length} 个`);
+        }
+
+        // 打开输出字段选择弹窗（无需修改）
+        async function openFieldModal() {
+            if (!supabase) {
+                alert('请先测试数据库连接');
+                return;
+            }
+
+            const tableName = document.getElementById('tableName').value.trim();
+            try {
+                allTableFields = await supabase.getTableColumns(tableName);
+                
+                const fieldListEl = document.getElementById('fieldList');
+                fieldListEl.innerHTML = '';
+                
+                allTableFields.forEach(field => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center';
+                    div.innerHTML = `
+                        <input type="checkbox" id="field_${field}" value="${field}" class="mr-2" checked>
+                        <label for="field_${field}">${field}</label>
+                    `;
+                    fieldListEl.appendChild(div);
+                });
+
+                document.getElementById('fieldModal').classList.remove('hidden');
+            } catch (error) {
+                alert(`获取字段失败: ${error.message}`);
+            }
+        }
+
+        // 关闭弹窗（无需修改）
+        function closeFieldModal() {
+            document.getElementById('fieldModal').classList.add('hidden');
+        }
+
+        // 全选字段（无需修改）
+        function selectAllFields() {
+            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+        }
+
+        // 取消全选（无需修改）
+        function deselectAllFields() {
+            document.querySelectorAll('#fieldList input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+        }
+
+        // 确认输出字段（无需修改）
+        function confirmOutputFields() {
+            const checkboxes = document.querySelectorAll('#fieldList input[type="checkbox"]:checked');
+            outputFields = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (outputFields.length === 0) {
+                alert('请至少选择一个输出字段');
+                return;
+            }
+
+            const statusEl = document.getElementById('outputFieldStatus');
+            if (outputFields.length <= 3) {
+                statusEl.textContent = `已选择: ${outputFields.join(', ')}`;
+            } else {
+                statusEl.textContent = `已选择 ${outputFields.length} 个字段（${outputFields.slice(0, 3).join(', ')}...）`;
+            }
+
+            closeFieldModal();
+            alert(`已选择 ${outputFields.length} 个输出字段`);
+        }
+
+        // 检查匹配（无需修改）
+        function checkMatch(text, keyword, matchType) {
+            if (!text) return false;
+            
+            const textLower = String(text).toLowerCase();
+            const keywordLower = keyword.toLowerCase();
+
+            switch (matchType) {
+                case 'EXACT':
+                    return textLower === keywordLower;
+                case 'PREFIX':
+                    return textLower.startsWith(keywordLower);
+                case 'SUFFIX':
+                    return textLower.endsWith(keywordLower);
+                case 'FUZZY':
+                default:
+                    const isEnglish = /^[a-zA-Z0-9_]+$/.test(keywordLower);
+                    if (isEnglish) {
+                        const pattern = new RegExp(`\\b${keywordLower}\\b`);
+                        return pattern.test(textLower);
+                    } else {
+                        return textLower.includes(keywordLower);
+                    }
+            }
+        }
+
+        // 开始匹配（无需修改）
+        async function startMatch() {
+            if (isMatching) {
+                alert('匹配正在进行中');
+                return;
+            }
+            
+            if (!supabase || keywords.length === 0 || matchFields.length === 0) {
+                alert('请先预加载数据');
+                return;
+            }
+
+            isMatching = true;
+            matchResults = [];
+            currentBatch = 0;
+            
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('matchStatus').textContent = '匹配开始...';
+            document.getElementById('resultEmpty').style.display = 'none';
+            clearResultTable();
+
+            const tableName = document.getElementById('tableName').value.trim();
+            const matchType = document.querySelector('input[name="matchType"]:checked').value;
+            const batchSize = parseInt(document.getElementById('batchSize').value) || 100;
+
+            try {
+                document.getElementById('matchStatus').textContent = '开始加载所有数据...';
+                const allTableData = await supabase.queryAllData(tableName);
+                document.getElementById('matchStatus').textContent = `数据加载完成！共 ${allTableData.length} 条记录`;
+                
+                const batches = [];
+                for (let i = 0; i < keywords.length; i += batchSize) {
+                    batches.push(keywords.slice(i, i + batchSize));
+                }
+                const totalBatches = batches.length;
+
+                for (let i = 0; i < batches.length && isMatching; i++) {
+                    currentBatch = i + 1;
+                    const batchKeywords = batches[i];
+                    
+                    const progress = (i / totalBatches) * 100;
+                    document.getElementById('progressBar').style.width = `${progress}%`;
+                    document.getElementById('matchStatus').textContent = 
+                        `处理关键词批次 ${currentBatch}/${totalBatches} (${progress.toFixed(1)}%) - 已匹配 ${matchResults.length} 条`;
+
+                    await processBatch(allTableData, batchKeywords, matchType);
+                }
+
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('matchStatus').textContent = `匹配完成！共找到 ${matchResults.length} 条记录（总数据量：${allTableData.length} 条）`;
+                
+                displayResults();
+                
+                if (matchResults.length === 0) {
+                    document.getElementById('resultEmpty').style.display = 'block';
+                }
+
+                alert(`匹配完成！
+共处理 ${keywords.length} 个关键词
+数据表总记录数：${allTableData.length} 条
+找到 ${matchResults.length} 条匹配记录`);
+            } catch (error) {
+                document.getElementById('matchStatus').textContent = `匹配出错: ${error.message}`;
+                alert(`匹配失败: ${error.message}`);
+            } finally {
+                isMatching = false;
+            }
+        }
+
+        // 处理单个关键词批次（无需修改）
+        async function processBatch(allTableData, batchKeywords, matchType) {
+            const validFields = matchFields.filter(field => allTableFields.includes(field));
+            
+            for (let recordIndex = 0; recordIndex < allTableData.length && isMatching; recordIndex++) {
+                const record = allTableData[recordIndex];
+                
+                if (recordIndex % 100 === 0) {
+                    document.getElementById('matchStatus').textContent = 
+                        `匹配中... 进度 ${Math.floor(recordIndex/allTableData.length*100)}% - 已匹配 ${matchResults.length} 条`;
+                }
+                
+                const matchedKeywords = [];
+                const matchedFields = [];
+
+                for (const field of validFields) {
+                    const fieldValue = record[field];
+                    
+                    for (const keyword of batchKeywords) {
+                        if (checkMatch(fieldValue, keyword, matchType)) {
+                            matchedKeywords.push(keyword);
+                            matchedFields.push(field);
+                        }
+                    }
+                }
+
+                if (matchedKeywords.length > 0) {
+                    const resultRecord = {
+                        '匹配关键词汇总': [...new Set(matchedKeywords)].join(';'),
+                        '匹配字段': [...new Set(matchedFields)].join(';')
+                    };
+
+                    const fieldsToOutput = outputFields.length > 0 ? outputFields : allTableFields;
+                    fieldsToOutput.forEach(field => {
+                        resultRecord[field] = record[field] !== undefined ? record[field] : '';
+                    });
+
+                    matchResults.push(resultRecord);
+                }
+            }
+        }
+
+        // 暂停匹配（无需修改）
+        function pauseMatch() {
+            if (isMatching) {
+                isMatching = false;
+                document.getElementById('matchStatus').textContent = `匹配已暂停（批次 ${currentBatch}）`;
+                alert('匹配已暂停');
+            } else {
+                alert('没有正在进行的匹配任务');
+            }
+        }
+
+        // 清空结果表格（无需修改）
+        function clearResultTable() {
+            const table = document.getElementById('resultTable');
+            table.querySelector('thead').innerHTML = '';
+            table.querySelector('tbody').innerHTML = '';
+        }
+
+        // 显示匹配结果（无需修改）
+        function displayResults() {
+            clearResultTable();
+            
+            if (matchResults.length === 0) return;
+
+            const headers = Object.keys(matchResults[0]);
+            const thead = document.getElementById('resultTable').querySelector('thead');
+            const headerRow = document.createElement('tr');
+            
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            const tbody = document.getElementById('resultTable').querySelector('tbody');
+            matchResults.forEach(record => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = record[header] || '';
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            });
+        }
+
+        // 导出Excel（无需修改）
+        function exportToExcel() {
+            if (matchResults.length === 0) {
+                alert('暂无匹配结果可导出');
+                return;
+            }
+
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.json_to_sheet(matchResults);
+            
+            XLSX.utils.book_append_sheet(workbook, worksheet, '匹配结果');
+            
+            XLSX.writeFile(workbook, `关键词匹配结果_${new Date().getTime()}.xlsx`);
+        }
+
+        // 显示消息（无需修改）
+        function showMessage(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.textContent = message;
+            
+            switch (type) {
+                case 'success':
+                    el.className = 'mt-3 text-sm text-green-600';
+                    break;
+                case 'error':
+                    el.className = 'mt-3 text-sm text-red-600';
+                    break;
+                case 'warning':
+                    el.className = 'mt-3 text-sm text-yellow-600';
+                    break;
+                default:
+                    el.className = 'mt-3 text-sm text-gray-600';
+            }
+        }
+    </script>
+</body>
+</html>
