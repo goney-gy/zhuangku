@@ -403,28 +403,103 @@
             };
         }
 
-        // 测试Supabase连接（无需修改）
-        async function testSupabaseConnection() {
-            const statusEl = document.getElementById('connStatus');
-            statusEl.textContent = '正在测试连接...';
-            
-            try {
-                supabase = initSupabase();
-                if (!supabase) return;
+        // 测试Supabase连接（修改：增加显示数据行数）
+async function testSupabaseConnection() {
+    const statusEl = document.getElementById('connStatus');
+    statusEl.textContent = '正在测试连接...';
+    
+    try {
+        supabase = initSupabase();
+        if (!supabase) return;
 
-                const tableName = document.getElementById('tableName').value.trim();
-                allTableFields = await supabase.getTableColumns(tableName);
-                
-                if (allTableFields.length > 0) {
-                    showMessage('connStatus', `连接成功！表 ${tableName} 包含 ${allTableFields.length} 个字段`, 'success');
-                } else {
-                    showMessage('connStatus', '连接成功但表无字段', 'warning');
+        const tableName = document.getElementById('tableName').value.trim();
+        
+        // 获取表字段
+        allTableFields = await supabase.getTableColumns(tableName);
+        
+        // 获取数据行数
+        let rowCount = 0;
+        try {
+            const response = await axios({
+                url: `${SUPABASE_CONFIG.url}/rest/v1/${tableName}?select=*&limit=1`,
+                method: 'HEAD',
+                headers: {
+                    'apikey': SUPABASE_CONFIG.key,
+                    'Authorization': `Bearer ${SUPABASE_CONFIG.key}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'count=exact'
                 }
-            } catch (error) {
-                showMessage('connStatus', `连接失败: ${error.message}`, 'error');
-                supabase = null;
+            });
+            // 从响应头中获取总行数
+            const contentRange = response.headers['content-range'];
+            if (contentRange) {
+                // content-range 格式: "0-0/123" 或 "0-0/*"
+                const match = contentRange.match(/\/(\d+)$/);
+                if (match) {
+                    rowCount = parseInt(match[1]);
+                }
+            }
+            
+            // 如果HEAD请求没有返回行数，改用COUNT查询
+            if (rowCount === 0) {
+                const countResponse = await axios({
+                    url: `${SUPABASE_CONFIG.url}/rest/v1/${tableName}?select=count`,
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_CONFIG.key,
+                        'Authorization': `Bearer ${SUPABASE_CONFIG.key}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    }
+                });
+                // 如果返回的是数组，取长度；如果是对象，取count字段
+                if (Array.isArray(countResponse.data)) {
+                    rowCount = countResponse.data.length;
+                } else if (countResponse.data && typeof countResponse.data === 'object') {
+                    rowCount = countResponse.data.count || 0;
+                }
+            }
+        } catch (countError) {
+            console.warn('获取行数失败，尝试备用方法:', countError);
+            // 备用方法：使用LIMIT 1查询并获取总数
+            try {
+                const fallbackResponse = await axios({
+                    url: `${SUPABASE_CONFIG.url}/rest/v1/${tableName}?select=*&limit=1`,
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_CONFIG.key,
+                        'Authorization': `Bearer ${SUPABASE_CONFIG.key}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    }
+                });
+                // 如果返回的数组长度大于0，说明表有数据，但无法获取精确总数
+                if (fallbackResponse.data && fallbackResponse.data.length > 0) {
+                    rowCount = -1; // 标记为"有数据但无法获取精确行数"
+                }
+            } catch (fallbackError) {
+                console.warn('备用方法也失败了:', fallbackError);
             }
         }
+        
+        if (allTableFields.length > 0) {
+            let message = `连接成功！表 ${tableName} 包含 ${allTableFields.length} 个字段`;
+            if (rowCount > 0) {
+                message += `，数据行数：${rowCount.toLocaleString()} 行`;
+            } else if (rowCount === -1) {
+                message += `，数据行数：> 0 行（精确数量获取失败）`;
+            } else {
+                message += `，数据行数：0 行（表为空）`;
+            }
+            showMessage('connStatus', message, 'success');
+        } else {
+            showMessage('connStatus', '连接成功但表无字段', 'warning');
+        }
+    } catch (error) {
+        showMessage('connStatus', `连接失败: ${error.message}`, 'error');
+        supabase = null;
+    }
+}
 
         // 加载Excel文件（无需修改）
         function loadFile(type) {
